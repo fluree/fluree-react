@@ -530,7 +530,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       }
     }
 
-    componentWillMount() {
+    UNSAFE_componentWillMount() {
       // get any missing vars from props and update this.opts with them
       if (this.missingVars.length !== 0) {
         this.missingVars.forEach((v) => {
@@ -558,7 +558,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       delete componentIdx[this.id];
     }
 
-    componentWillReceiveProps(nextProps) {
+    UNSAFE_componentWillReceiveProps(nextProps) {
       if (this.queryIsFunction) {
         const newQuery = query(nextProps, this.context);
         this.query = newQuery;
