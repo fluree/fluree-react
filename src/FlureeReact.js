@@ -105,7 +105,7 @@ function workerMessageHandler(e) {
 
       if (cb) {
         delete callbackRegistry[msg.ref];
-        cb(msg.data);
+        cb(msg, connStatus[msg.conn]);
       }
       break;
     
@@ -216,7 +216,14 @@ function registerQuery(conn, compId, query, opts, forceUpdate) {
     ref: compId,
     params: [compId, query, opts, forceUpdate]
   };
-  return workerInvoke(invokeObj);
+  if (connStatus[conn.id].ready){
+    return workerInvoke(invokeObj);
+  }
+  else {
+    if (connStatus[conn.id].wiObj === undefined) { connStatus[conn.id].wiObj = []; }
+    connStatus[conn.id].wiObj.push(invokeObj);
+  }
+  return false;
 }
 
 // Remove query from registry
@@ -420,17 +427,29 @@ function ReactConnect(connSettings) {
     conn: 0, // conn 0 means not connection specific
     action: "connect",
     params: [settings],
-    cb: function cb(result) {
-      if (result.status === 200) {
-        console.log("connection ready.");
-      }
-      else {
-        console.error("connection error");
-      }
-    }
-  });
+    cb: function cb(msg, connStatus) {
 
-  // return connection object
+      var response = msg.data || {};
+      var data = { status: (response.status === 200 ? "loading" : "connection error")};
+      var connectionStatus =  connStatus || {}
+      if (connectionStatus.cb)  // callbacks registered?
+      {
+        connectionStatus.cb.forEach(compId =>
+          {
+            var comp = componentIdx[compId];
+            if (comp) {
+              comp.setState(data);  
+            } else {
+              SHOULD_LOG && console.warn("Component no longer registered: " + compId);
+            }
+          });
+      }
+      if (connectionStatus.wiObj) {  // workerInvoke objects registered?
+        connectionStatus.wiObj.forEach(obj => { 
+          workerInvoke(obj); })};
+    }
+  }); // return connection object
+
   return conn;
 }
 
@@ -564,7 +583,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       if (connStatus[this.conn.id].t)
         this.opts.t = connStatus[this.conn.id].t;
 
-      if (connStatus[this.conn.id].ready && this.query && this.isValidQuery) {
+      if (this.query && this.isValidQuery) {
         registerQuery(this.conn, this.id, this.query, this.opts);
       }
     }
@@ -579,7 +598,7 @@ function wrapComponent(WrappedComponent, query, opts) {
         const newQuery = query(nextProps, this.context);
         this.query = newQuery;
         this.isValidQuery = queryIsValid(this.query);
-        if (connStatus[this.conn.id].ready && this.query && this.isValidQuery) {
+        if (this.query && this.isValidQuery) {
           registerQuery(this.conn, this.id, this.query, this.opts);
         }
       } else {
@@ -613,7 +632,7 @@ function wrapComponent(WrappedComponent, query, opts) {
         id: this.id,
         result: result,
         forceUpdate: function () {
-          if (connStatus[this.conn.id].ready && this.query && this.isValidQuery)
+          if (this.query && this.isValidQuery)
             registerQuery(this.conn, this.id, this.query, this.opts, true);
         }.bind(this),
         deltas: this.state.deltas,
