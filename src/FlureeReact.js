@@ -99,8 +99,16 @@ function workerMessageHandler(e) {
             break;
         }
       }
-      break;
 
+      // check for callback
+      cb = callbackRegistry[msg.ref];
+
+      if (cb) {
+        delete callbackRegistry[msg.ref];
+        cb(msg.data);
+      }
+      break;
+    
     case "connClosed":
       cb = callbackRegistry[msg.ref];
       if (cb) {
@@ -411,7 +419,15 @@ function ReactConnect(connSettings) {
   workerInvoke({
     conn: 0, // conn 0 means not connection specific
     action: "connect",
-    params: [settings]
+    params: [settings],
+    cb: function cb(result) {
+      if (result.status === 200) {
+        console.log("connection ready.");
+      }
+      else {
+        console.error("connection error");
+      }
+    }
   });
 
   // return connection object
@@ -548,7 +564,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       if (connStatus[this.conn.id].t)
         this.opts.t = connStatus[this.conn.id].t;
 
-      if (this.query && this.isValidQuery) {
+      if (connStatus[this.conn.id].ready && this.query && this.isValidQuery) {
         registerQuery(this.conn, this.id, this.query, this.opts);
       }
     }
@@ -563,7 +579,7 @@ function wrapComponent(WrappedComponent, query, opts) {
         const newQuery = query(nextProps, this.context);
         this.query = newQuery;
         this.isValidQuery = queryIsValid(this.query);
-        if (this.query && this.isValidQuery) {
+        if (connStatus[this.conn.id].ready && this.query && this.isValidQuery) {
           registerQuery(this.conn, this.id, this.query, this.opts);
         }
       } else {
@@ -597,7 +613,7 @@ function wrapComponent(WrappedComponent, query, opts) {
         id: this.id,
         result: result,
         forceUpdate: function () {
-          if (this.query && this.isValidQuery)
+          if (connStatus[this.conn.id].ready && this.query && this.isValidQuery)
             registerQuery(this.conn, this.id, this.query, this.opts, true);
         }.bind(this),
         deltas: this.state.deltas,
