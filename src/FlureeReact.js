@@ -3,7 +3,7 @@ import hoistNonReactStatics from 'hoist-non-react-statics';
 import PropTypes from 'prop-types';
 import { isStorageAvailable } from "./localStorage";
 
-let SHOULD_LOG = true;
+let SHOULD_LOG = false;
 
 // id counter to be used for various things that require unique identifiers
 var idCounter = 0;
@@ -108,7 +108,7 @@ function workerMessageHandler(e) {
         cb(msg, connStatus[msg.conn]);
       }
       break;
-    
+
     case "connClosed":
       cb = callbackRegistry[msg.ref];
       if (cb) {
@@ -216,7 +216,7 @@ function registerQuery(conn, compId, query, opts, forceUpdate) {
     ref: compId,
     params: [compId, query, opts, forceUpdate]
   };
-  if (connStatus[conn.id].ready){
+  if (connStatus[conn.id].ready) {
     return workerInvoke(invokeObj);
   }
   else {
@@ -265,44 +265,52 @@ function instanceFromHostname() {
 }
 
 
-// Create a new connection with settings object.
-// need to provide url, instance and token keys at minumum.
-function ReactConnect(connSettings) {
-  var settings;
-  if (typeof connSettings === 'object' && connSettings !== null) {
+/**
+ * Create a new connection with settings object.
+ * 
+ * @param {Object} config - Connection Settings
+ * @param {string} config.servers - List of server URIs separated by commas
+ * @param {string} config.ledger - Ledger name, i.e. 'my/ledger'
+ * @param {string} [config.workerUrl='/flureeworker.js.gz'] - URL for flureeworker.js.gz
+ * @param {boolean} [config.saveSession=false] - Will save session (token) locally so won't need to re-authenticate if token isn't expired
+ * @param {string} [config.token] - You can supply a JWT token yourself
+ * @param {boolean} [config.removeNamespaces=true] - Option to remove namespaces from predicates when the namespace is the same as the collection
+ * @param {boolean} [config.log=false] - Set to true to see logging. Debug logging must be enabled with 'Verbose' in DevTools.
+ */
+function ReactConnect(config) {
+  var safeConfig;
+  if (typeof config === 'object' && config !== null) {
     // copy over all settings that can be serialized, else will fail web worker messaging
-    settings = JSON.parse(JSON.stringify(connSettings));
+    safeConfig = JSON.parse(JSON.stringify(config));
   } else {
-    settings = { servers: connSettings }
+    safeConfig = { servers: config }
   }
 
   // initialize worker if not already done
   if (!fqlWorker) {
-    fqlWorker = new Worker(settings.workerUrl || "/flureeworker.js");
+    fqlWorker = new Worker(safeConfig.workerUrl || "/flureeworker.js");
     fqlWorker.onmessage = workerMessageHandler;
     fqlWorker.onerror = workerErrorHandler;
   }
 
   connIdCounter++;
-  settings.id = connIdCounter;
-  settings.instance = settings.instance || instanceFromHostname();
-  settings.url = settings.url || 'https://' + settings.instance,
-    settings.log = settings.log === false ? false : true;
-  settings.removeNamespace = settings.removeNamespace === false ? false : true;
+  safeConfig.id = connIdCounter;
+  safeConfig.log = safeConfig.log === true ? true : false;
+  safeConfig.removeNamespace = safeConfig.removeNamespace === false ? false : true;
 
-  const connId = settings.id;
-  const localStorageKey = settings.instance + '/login';
-  const savedSession = localStorage.getItem(localStorageKey) || {};
+  const connId = safeConfig.id;
+  const localStorageKey = safeConfig.ledger + ':auth';
+  const authData = localStorage.getItem(localStorageKey) || {};
 
-  SHOULD_LOG = settings.log;
+  SHOULD_LOG = safeConfig.log;
 
   const conn = {
-    id: settings.id,
+    id: safeConfig.id,
     isReady: () => isReady(connId),
     isClosed: () => isClosed(connId),
     login: function (username, password, cb, rememberMe) {
       return workerInvoke({
-        conn: settings.id,
+        conn: safeConfig.id,
         action: "login",
         params: [username, password],
         cb: function (result) {
@@ -327,7 +335,7 @@ function ReactConnect(connSettings) {
       return connStatus[connId].user;
     },
     getInstance: function () {
-      return settings.instance;
+      return safeConfig.instance;
     },
     isAuthenticated: function () {
       if (connStatus[connId].anonymous === false) {
@@ -416,40 +424,42 @@ function ReactConnect(connSettings) {
   connStatus[connId] = {
     ready: false,
     // if we already passed in a token, can also pass in the user/anonymous flags for storing
-    user: settings.user,
-    anonymous: settings.anonymous,
+    user: safeConfig.user,
+    anonymous: safeConfig.anonymous,
     // optional unauthorizedCallback will be called when a request is unauthorized
-    unauthorizedCallback: connSettings.unauthorizedCallback
+    unauthorizedCallback: config.unauthorizedCallback
   };
 
   // initiate our connection in the web worker
   workerInvoke({
     conn: 0, // conn 0 means not connection specific
     action: "connect",
-    params: [settings],
+    params: [safeConfig],
     cb: function cb(msg, connStatus) {
 
       var response = msg.data || {};
-      var data = { status: (response.status === 200 ? "loading" : "connection error")};
-      var connectionStatus =  connStatus || {}
+      var data = { status: (response.status === 200 ? "loading" : "connection error") };
+      var connectionStatus = connStatus || {}
       if (connectionStatus.cb)  // callbacks registered?
       {
-        connectionStatus.cb.forEach(compId =>
-          {
-            var comp = componentIdx[compId];
-            if (comp) {
-              comp.setState(data);  
-            } else {
-              SHOULD_LOG && console.warn("Component no longer registered: " + compId);
-            }
-          });
+        connectionStatus.cb.forEach(compId => {
+          var comp = componentIdx[compId];
+          if (comp) {
+            comp.setState(data);
+          } else {
+            SHOULD_LOG && console.warn("Component no longer registered: " + compId);
+          }
+        });
       }
       if (connectionStatus.wiObj) {  // workerInvoke objects registered?
-        connectionStatus.wiObj.forEach(obj => { 
-          workerInvoke(obj); })};
+        connectionStatus.wiObj.forEach(obj => {
+          workerInvoke(obj);
+        })
+      };
     }
-  }); // return connection object
-
+  }); 
+  
+  // return connection object
   return conn;
 }
 
@@ -684,7 +694,7 @@ class TimeTravel extends React.Component {
 
   handleChange(event) {
     const block = event.target.value;
-    this.setState({block: block});
+    this.setState({ block: block });
     this.conn.defaultBlock(block);
   }
 
