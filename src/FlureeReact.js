@@ -272,13 +272,15 @@ function instanceFromHostname() {
  * Create a new connection with settings object.
  * 
  * @param {Object} config - Connection Settings
- * @param {string} config.servers - List of server URIs separated by commas
- * @param {string} config.ledger - Ledger name, i.e. 'my/ledger'
+ * @param {string} [config.servers] - List of server URIs separated by commas
+ * @param {string} [config.ledger] - Ledger name, i.e. 'my/ledger'
  * @param {string} [config.workerUrl='/flureeworker.js.gz'] - URL for flureeworker.js.gz
  * @param {boolean} [config.saveSession=false] - Will save session (token) locally so won't need to re-authenticate if token isn't expired
  * @param {string} [config.token] - You can supply a JWT token yourself
  * @param {boolean} [config.removeNamespaces=true] - Option to remove namespaces from predicates when the namespace is the same as the collection
  * @param {boolean} [config.log=false] - Set to true to see logging. Debug logging must be enabled with 'Verbose' in DevTools.
+ * @param {string} [config.username] - Set username for login when you want to automatically trigger the login with connection initialization.
+ * @param {string} [config.password] - Set password for login when you want to automatically trigger the login with connection initialization.
  */
 function ReactConnect(config) {
   var safeConfig;
@@ -593,7 +595,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       }
     }
 
-    UNSAFE_componentWillMount() {
+    componentDidMount() {
       // get any missing vars from props and update this.opts with them
       if (this.missingVars.length !== 0) {
         this.missingVars.forEach((v) => {
