@@ -146,8 +146,11 @@ function workerMessageHandler(e) {
     case "login":
       // if login successful, update conn's connStatus
       if (msg.data.status === 200) {
-        connStatus[msg.conn].user = msg.data.body.user;
-        connStatus[msg.conn].anonymous = msg.data.body.anonymous;
+        connStatus[msg.conn].user = msg.data.result.username;
+        connStatus[msg.conn].anonymous = false;
+      }
+      else {
+        SHOULD_LOG && console.warn("Unable to authenticate: " + msg.data.message)
       }
       // if there was a callback passed to login(), execute
       cb = callbackRegistry[msg.ref];
@@ -313,12 +316,17 @@ function ReactConnect(config) {
         conn: safeConfig.id,
         action: "login",
         params: [username, password],
-        cb: function (result) {
+        cb: function (response) {
+          if (response.status !== 200) {
+            SHOULD_LOG && console.warn("Login failed: " + response.message)
+          }
           if (cb && typeof cb === 'function') {
-            if (result.status === 200 && rememberMe)
-              localStorage.setItem(localStorageKey, result.body);
+            if (response.status === 200 && rememberMe)
+              localStorage.setItem(localStorageKey, response.result.username);
             cb(result);
           }
+          // execute pending callbacks on connection object
+          conn.executeCallbacks((response.status === 200 ? "authenticated" : "authentication error"));
         }
       });
     },
@@ -330,6 +338,26 @@ function ReactConnect(config) {
         params: [invokeStatment],
         cb: cb
       });
+    },
+    executeCallbacks: function (data) {
+      var connectionStatus =  connStatus[conn.id];
+      if (connectionStatus.cb)  {  // callbacks registered?
+        connectionStatus.cb.forEach(compId =>
+          {
+            var comp = componentIdx[compId];
+            if (comp) {
+              comp.setState(data);  
+            } else {
+              SHOULD_LOG && console.warn("Component no longer registered: " + compId);
+            }
+          });
+      }
+      if (connectionStatus.wiObj) {  // workerInvoke objects registered?
+        connectionStatus.wiObj.forEach(obj => { 
+          workerInvoke(obj); })}
+      // reset connection callbacks
+      connStatus[conn.id].cb = [];
+      connStatus[conn.id].wiObj = []
     },
     getUser: function () {
       return connStatus[connId].user;
@@ -438,24 +466,14 @@ function ReactConnect(config) {
     cb: function cb(msg, connStatus) {
 
       var response = msg.data || {};
-      var data = { status: (response.status === 200 ? "loading" : "connection error") };
-      var connectionStatus = connStatus || {}
-      if (connectionStatus.cb)  // callbacks registered?
-      {
-        connectionStatus.cb.forEach(compId => {
-          var comp = componentIdx[compId];
-          if (comp) {
-            comp.setState(data);
-          } else {
-            SHOULD_LOG && console.warn("Component no longer registered: " + compId);
-          }
-        });
+      var data = { status: (response.status === 200 ? "loading" : "connection error")};
+      
+      if (safeConfig.user) {  // Authenticate?
+        conn.login(safeConfig.user, safeConfig.password, undefined, safeConfig.rememberMe);
       }
-      if (connectionStatus.wiObj) {  // workerInvoke objects registered?
-        connectionStatus.wiObj.forEach(obj => {
-          workerInvoke(obj);
-        })
-      };
+      else {
+        conn.executeCallbacks(data);
+      }
     }
   }); 
   
