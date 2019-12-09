@@ -277,7 +277,7 @@ function instanceFromHostname() {
  * @param {string} [config.workerUrl='/flureeworker.js.gz'] - URL for flureeworker.js.gz
  * @param {boolean} [config.saveSession=false] - Will save session (token) locally so won't need to re-authenticate if token isn't expired
  * @param {string} [config.token] - You can supply a JWT token yourself
- * @param {boolean} [config.removeNamespaces=true] - Option to remove namespaces from predicates when the namespace is the same as the collection
+ * @param {boolean} [config.compact=true] - Option to remove namespaces from predicates when the namespace is the same as the collection
  * @param {boolean} [config.log=false] - Set to true to see logging. Debug logging must be enabled with 'Verbose' in DevTools.
  * @param {string} [config.username] - Set username for login when you want to automatically trigger the login with connection initialization.
  * @param {string} [config.password] - Set password for login when you want to automatically trigger the login with connection initialization.
@@ -301,7 +301,7 @@ function ReactConnect(config) {
   connIdCounter++;
   safeConfig.id = connIdCounter;
   safeConfig.log = safeConfig.log === true ? true : false;
-  safeConfig.removeNamespace = safeConfig.removeNamespace === false ? false : true;
+  safeConfig.compact = safeConfig.compact === false ? false : true;
 
   const connId = safeConfig.id;
   const localStorageKey = safeConfig.ledger + ':auth';
@@ -342,21 +342,22 @@ function ReactConnect(config) {
       });
     },
     executeCallbacks: function (data) {
-      var connectionStatus =  connStatus[conn.id];
-      if (connectionStatus.cb)  {  // callbacks registered?
-        connectionStatus.cb.forEach(compId =>
-          {
-            var comp = componentIdx[compId];
-            if (comp) {
-              comp.setState(data);  
-            } else {
-              SHOULD_LOG && console.warn("Component no longer registered: " + compId);
-            }
-          });
+      var connectionStatus = connStatus[conn.id];
+      if (connectionStatus.cb) {  // callbacks registered?
+        connectionStatus.cb.forEach(compId => {
+          var comp = componentIdx[compId];
+          if (comp) {
+            comp.setState(data);
+          } else {
+            SHOULD_LOG && console.warn("Component no longer registered: " + compId);
+          }
+        });
       }
       if (connectionStatus.wiObj) {  // workerInvoke objects registered?
-        connectionStatus.wiObj.forEach(obj => { 
-          workerInvoke(obj); })}
+        connectionStatus.wiObj.forEach(obj => {
+          workerInvoke(obj);
+        })
+      }
       // reset connection callbacks
       connStatus[conn.id].cb = [];
       connStatus[conn.id].wiObj = []
@@ -468,8 +469,8 @@ function ReactConnect(config) {
     cb: function cb(msg, connStatus) {
 
       var response = msg.data || {};
-      var data = { status: (response.status === 200 ? "loading" : "connection error")};
-      
+      var data = { status: (response.status === 200 ? "loading" : "connection error") };
+
       if (safeConfig.user) {  // Authenticate?
         conn.login(safeConfig.user, safeConfig.password, undefined, safeConfig.rememberMe);
       }
@@ -477,8 +478,8 @@ function ReactConnect(config) {
         conn.executeCallbacks(data);
       }
     }
-  }); 
-  
+  });
+
   // return connection object
   return conn;
 }
