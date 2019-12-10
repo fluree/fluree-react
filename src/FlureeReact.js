@@ -332,15 +332,6 @@ function ReactConnect(config) {
         }
       });
     },
-    invoke: function (action, params, cb) {
-      const invokeStatment = [action, params];
-      return workerInvoke({
-        conn: connId,
-        action: "remoteInvoke",
-        params: [invokeStatment],
-        cb: cb
-      });
-    },
     executeCallbacks: function (data) {
       var connectionStatus = connStatus[conn.id];
       if (connectionStatus.cb) {  // callbacks registered?
@@ -411,14 +402,6 @@ function ReactConnect(config) {
         action: "close",
         params: [],
         cb: cb
-      });
-    },
-    defaultBlock: function (block) {
-      return workerInvoke({
-        conn: connId,
-        action: "defaultBlock",
-        params: [block],
-        cb: null
       });
     },
     forceTime: function (t) {
