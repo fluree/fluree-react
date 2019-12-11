@@ -167,17 +167,6 @@ function workerMessageHandler(e) {
   return;
 }
 
-
-function setStateCb(conn, id, stateUpdate) {
-  const comp = componentIdx[id];
-
-  if (comp) {
-    comp.setState(stateUpdate);
-  } else {
-    SHOULD_LOG && console.warn("Component no longer registered: " + compId);
-  }
-}
-
 // we use a global to track connection state, get method for it
 function isReady(connId) {
   return connStatus[connId].ready;
@@ -243,7 +232,8 @@ function queryIsValid(query) {
   if (
     query !== null
     && typeof query === "object"
-    && typeof query.vars === "object" // null or object
+    && (query.vars === undefined 
+        || typeof query.vars === "object") // null or object
   ) {
     return true;
   } else {
@@ -312,7 +302,7 @@ function ReactConnect(config) {
           }
           if (cb && typeof cb === 'function') {
             if (response.status === 200 && rememberMe)
-              localStorage.setItem(localStorageKey, response.result.username);
+              localStorage.setItem(localStorageKey, response.result); // username, token
             cb(result);
           }
           // execute pending callbacks on connection object
@@ -554,9 +544,9 @@ function wrapComponent(WrappedComponent, query, opts) {
       delete componentIdx[this.id];
     }
 
-    UNSAFE_componentWillReceiveProps(nextProps) {
+    componentDidUpdate(prevProps, prevState)   {
       if (this.queryIsFunction) {
-        const newQuery = query(nextProps, this.context);
+        const newQuery = query(this.props, this.context);
         this.query = newQuery;
         this.isValidQuery = queryIsValid(this.query);
         if (this.query && this.isValidQuery) {
@@ -568,14 +558,14 @@ function wrapComponent(WrappedComponent, query, opts) {
 
         for (let i = 0; i < this.missingVars.length; i++) {
           const varName = this.missingVars[i];
-          if (this.props[varName] !== nextProps[varName]) {
+          if (prevProps[varName] !== this.props[varName]) {
             didMissingVarsChange = true;
           }
         }
 
         if (didMissingVarsChange === true) {
           this.missingVars.forEach((v) => {
-            this.query.vars["?" + v] = nextProps[v];
+            this.query.vars["?" + v] = this.props[v];
           });
           registerQuery(this.conn, this.id, this.query, this.opts);
         }
