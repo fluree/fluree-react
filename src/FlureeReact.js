@@ -240,31 +240,19 @@ function unregisterQuery(conn, compId) {
 }
 
 function queryIsValid(query) {
-  if (query !== null && typeof query === "object") {
+  if (
+    query !== null
+    && typeof query === "object"
+    && typeof query.vars === "object" // null or object
+  ) {
     return true;
   } else {
     return false;
   }
-  // if (query !== null && (Array.isArray(query) || typeof query === "object")) {
-  //   const graph = Array.isArray(query) ? query : query.graph;
-  //   if (Array.isArray(graph) && graph.length > 0) {
-  //     return true;
-  //   } else {
-  //     return false;
-  //   }
-  // } else {
-  //   return false;
-  // }
 }
 
 function workerErrorHandler(error) {
   console.error('Web worker error', JSON.stringify(error));
-}
-
-function instanceFromHostname() {
-  const url = window.location.hostname || "";
-  const [_, instance] = url.match(/([^./]+)\.flur\.ee/) || []; // eslint-disable-line
-  return instance;
 }
 
 
@@ -508,43 +496,10 @@ class FlureeProvider extends React.Component {
 // given a query and options, returns a vector of variables that
 // were not provided via options. We use this to look for the variables
 // in props
-function getMissingVars(flurQL, opts) {
-  const vars = flurQL.vars;
-
-  if (!vars || !Array.isArray(vars)) {
-    return [];
-  }
-
-  if (opts && opts.vars) {
-    return vars.filter((v) => { return !opts.vars[v]; });
-  } else {
-    return vars;
-  }
-}
-
-// Create an empty map of the top level query nodes so less
-// boilerplate is required to test if a property exists in the
-// wrapped component
-function fillDefaultResult(query) {
-  if (!query) return {};
-
-  const graph = query.graph || query;
-
-  if (!Array.isArray(graph)) { // invalid graph
-    return;
-  }
-
-  var defaultResult = {};
-
-  graph.map(([stream, opts]) => {
-    if (opts.as) {
-      defaultResult[opts.as] = null;
-    } else {
-      defaultResult[stream] = null;
-    }
-  });
-
-  return defaultResult;
+function getMissingVars(flurQL) {
+  const vars = flurQL.vars ? Object.keys(flurQL.vars) : [];
+  // return array of vars that have null as value
+  return vars.filter( x => flurQL.vars[x] === null).map( x => x.substr(1));
 }
 
 function wrapComponent(WrappedComponent, query, opts) {
@@ -560,14 +515,13 @@ function wrapComponent(WrappedComponent, query, opts) {
     constructor(props, context) {
       super(props, context);
       this.conn = context.conn;
-      this.opts = Object.assign({ vars: {} }, opts);
       this.id = nextId();
       this.queryIsFunction = (typeof query === "function")
       this.query = this.queryIsFunction ? query(props, this.context) : query;
       this.isValidQuery = this.query && queryIsValid(this.query);
-      this.missingVars = this.isValidQuery ? getMissingVars(this.query, this.opts) : []; // list of vars we need to check props for
+      this.missingVars = this.isValidQuery && this.query.vars ? getMissingVars(this.query) : []; // list of vars we need to check props for
       this.state = {
-        result: this.isValidQuery ? fillDefaultResult(this.query) : {},
+        result: {},
         error: this.query && !this.isValidQuery ? { status: 400, message: "Query is not valid: " + JSON.stringify(this.query) } : null,
         warning: this.query ? null : "No query yet, waiting...",
         status: "pending",
@@ -583,19 +537,12 @@ function wrapComponent(WrappedComponent, query, opts) {
       // get any missing vars from props and update this.opts with them
       if (this.missingVars.length !== 0) {
         this.missingVars.forEach((v) => {
-          if ('currentUser' === v) {
-            this.opts.vars[v] = this.conn.getUser();
-          } else {
-            this.opts.vars[v] = this.props[v];
-          }
+          this.query.vars["?" + v] = this.props[v];
         });
       }
 
       // register this component for later re-render calling, etc.
       componentIdx[this.id] = this;
-      // apply time over-ride to options if there is one
-      if (connStatus[this.conn.id].t)
-        this.opts.t = connStatus[this.conn.id].t;
 
       if (this.query && this.isValidQuery) {
         registerQuery(this.conn, this.id, this.query, this.opts);
@@ -628,13 +575,8 @@ function wrapComponent(WrappedComponent, query, opts) {
 
         if (didMissingVarsChange === true) {
           this.missingVars.forEach((v) => {
-            if ('currentUser' === v) {
-              this.opts.vars[v] = this.conn.getUser();
-            } else {
-              this.opts.vars[v] = nextProps[v];
-            }
+            this.query.vars["?" + v] = nextProps[v];
           });
-
           registerQuery(this.conn, this.id, this.query, this.opts);
         }
       }
@@ -722,7 +664,6 @@ class TimeTravel extends React.Component {
     );
   }
 }
-
 
 
 export { flureeQL, registerQuery, unregisterQuery, ReactConnect, FlureeProvider, TimeTravel };
