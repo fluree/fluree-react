@@ -1,7 +1,8 @@
 import React from 'react';
-import hoistNonReactStatics from 'hoist-non-react-statics';
 import PropTypes from 'prop-types';
+import hoistNonReactStatics from 'hoist-non-react-statics';
 import { isStorageAvailable } from "./localStorage";
+import Samples from "./Samples";
 
 let SHOULD_LOG = false;
 
@@ -636,17 +637,11 @@ class TimeTravel extends React.Component {
 
   handleSubmit(event) {
     event.preventDefault();
-    console.log("conn: @@@@@@@@");
-    console.log(this.conn);
     this.conn.defaultBlock(this.state.block);
-    // alert('A block was submitted: ' + this.state.block);
     return;
   }
 
   render() {
-    let isStorage = isStorageAvailable();
-
-
     return (
       <form onSubmit={this.handleSubmit.bind(this)}>
         <input type="number" value={this.state.block} onChange={this.handleChange.bind(this)}></input>
@@ -656,4 +651,4 @@ class TimeTravel extends React.Component {
 }
 
 
-export { flureeQL, registerQuery, unregisterQuery, ReactConnect, FlureeProvider, TimeTravel };
+export { flureeQL, registerQuery, unregisterQuery, ReactConnect, FlureeProvider, TimeTravel, Samples };
