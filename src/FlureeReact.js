@@ -383,6 +383,14 @@ function ReactConnect(config) {
         cb: cb
       });
     },
+    defaultBlock: function (block) {
+      return workerInvoke({
+        conn: connId,
+        action: "defaultBlock",
+        params: [block],
+        cb: null
+      });
+    },    
     forceTime: function (t) {
       if (t && !(t instanceof Date)) {
         console.error("forceTime requires a date as a parameter, provided: " + t)
@@ -633,6 +641,7 @@ class TimeTravel extends React.Component {
     const block = event.target.value;
     this.setState({ block: block });
     this.conn.defaultBlock(block);
+    return;
   }
 
   handleSubmit(event) {
