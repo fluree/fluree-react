@@ -3,6 +3,8 @@ import PropTypes from 'prop-types';
 import hoistNonReactStatics from 'hoist-non-react-statics';
 import { isStorageAvailable } from "./localStorage";
 import Samples from "./Samples";
+import Slider from '@material-ui/core/Slider'
+import Tooltip from '@material-ui/core/Tooltip'
 
 let SHOULD_LOG = false;
 
@@ -70,7 +72,7 @@ function workerMessageHandler(e) {
   var cb;
 
   SHOULD_LOG && console.log("Message from worker: " + JSON.stringify(msg));
-
+  // console.log('returned message', msg)
   // if unauthorized response, trigger any registered unauthorizedCallbacks
   if (msg.data && msg.data.status === 401)
     executeUnauthorizedCallbacks(msg.conn, msg.data);
@@ -128,11 +130,22 @@ function workerMessageHandler(e) {
 
     case "setState":
       const comp = componentIdx[msg.ref];
+
       if (comp) {
         comp.setState(msg.data);
       } else {
         SHOULD_LOG && console.warn("Component no longer registered: " + msg.ref);
       }
+
+      const timeTravelWidget = componentIdx['TimeTravelWidget']
+      if (timeTravelWidget && msg.ref !== "TimeTravelWidget") {
+        if (timeTravelWidget.state.changedBlock) {
+          timeTravelWidget.setState(state => ({ ...state, changedBlock: false }))
+        } else {
+          timeTravelWidget.setState(state => ({ ...state, shouldUpdate: true }))
+        }
+      }
+
       break;
 
     case "remoteInvoke":
@@ -233,8 +246,8 @@ function queryIsValid(query) {
   if (
     query !== null
     && typeof query === "object"
-    && (query.vars === undefined 
-        || typeof query.vars === "object") // null or object
+    && (query.vars === undefined
+      || typeof query.vars === "object") // null or object
   ) {
     return true;
   } else {
@@ -390,24 +403,30 @@ function ReactConnect(config) {
         params: [block],
         cb: null
       });
-    },    
+    },
     forceTime: function (t) {
-      if (t && !(t instanceof Date)) {
-        console.error("forceTime requires a date as a parameter, provided: " + t)
-        return;
-      }
-      const tISOString = t ? t.toISOString() : null;
+      // if (t && !(t instanceof Date)) {
+      //   console.error("forceTime requires a date as a parameter, provided: " + t)
+      //   return;
+      // }
+      const blockQuery = (t instanceof Date) ? t.toISOString() : t
+      // const tISOString = t ? t.toISOString() : null;
       const componentIds = Object.keys(componentIdx);
       // update central conn status to use this t for any new components rendered
-      connStatus[connId].t = tISOString;
+      connStatus[connId].t = blockQuery;
       // update options of all mounted components to add or remove 't' as applicable
       componentIds.map(id => {
         let component = componentIdx[id];
 
-        if (t)
-          component.opts.t = tISOString;
-        else
-          delete component.opts.t;
+        if (component.blockQuery) {
+          return
+        }
+
+        if (t || t === 0) {
+          component.query.block = blockQuery;
+        } else {
+          delete component.opts.t
+        }
 
         registerQuery(component.conn, component.id, component.query, component.opts);
       })
@@ -498,7 +517,7 @@ class FlureeProvider extends React.Component {
 function getMissingVars(flurQL) {
   const vars = flurQL.vars ? Object.keys(flurQL.vars) : [];
   // return array of vars that have null as value
-  return vars.filter( x => flurQL.vars[x] === null).map( x => x.substr(1));
+  return vars.filter(x => flurQL.vars[x] === null).map(x => x.substr(1));
 }
 
 function wrapComponent(WrappedComponent, query, opts) {
@@ -553,7 +572,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       delete componentIdx[this.id];
     }
 
-    componentDidUpdate(prevProps, prevState)   {
+    componentDidUpdate(prevProps, prevState) {
       if (this.queryIsFunction) {
         const newQuery = query(this.props, this.context);
         this.query = newQuery;
@@ -625,38 +644,92 @@ function flureeQL(query, opts) {
   }
 }
 
+function ValueLabelComponent(props) {
+  const { children, open, value } = props
+  return (
+    <Tooltip open={open} enterTouchDelay={0} placement="top" title={value}>
+      {children}
+    </Tooltip>
+  )
+}
+
+ValueLabelComponent.propTypes = {
+  children: PropTypes.element.isRequired,
+  open: PropTypes.bool.isRequired,
+  value: PropTypes.number.isRequired
+}
 
 class TimeTravel extends React.Component {
   static contextTypes = {
     conn: PropTypes.object.isRequired
   };
+  static propTypes = {
+    dateTime: PropTypes.bool
+  }
 
   constructor(props, context) {
-    super(props);
-    this.state = { block: null };
-    this.conn = context.conn;
+    super(props, context)
+    this.conn = context.conn
+    this.id = "TimeTravelWidget"
+    this.useBlock = !props.dateTime
+    this.blockQuery = {
+      "selectOne": ["?maxBlock", "?lastBlockTime", "?firstBlockTime"],
+      "where": [
+        ["?s", "_block/number", "?bNum"],
+        ["?maxBlock", "(max ?bNum)"],
+        ["?minBlock", "(min ?bNum)"],
+        ["?maxS", "_block/number", "?maxBlock"],
+        ["?maxS", "_block/instant", "?lastBlockTime"],
+        ["?minS", "_block/number", "?minBlock"],
+        ["?minS", "_block/instant", "?firstBlockTime"]
+      ]
+    }
+    this.state = {
+      value: this.useBlock ? 2 : new Date().valueOf(),
+      min: this.useBlock ? 1 : 1451624400000,
+      max: this.useBlock ? 2 : new Date().valueOf()
+    }
   }
 
-  handleChange(event) {
-    const block = event.target.value;
-    this.setState({ block: block });
-    this.conn.defaultBlock(block);
-    return;
+  changeFunc(arg) {
+    return this.setState(state => ({ ...state, [this.useBlock ? 'block' : 'time']: arg }))
   }
 
-  handleSubmit(event) {
-    event.preventDefault();
-    this.conn.defaultBlock(this.state.block);
-    return;
+  componentDidMount() {
+    componentIdx[this.id] = this
+    registerQuery(this.conn, this.id, this.blockQuery, null, true)
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (this.state.shouldUpdate) {
+      registerQuery(this.conn, this.id, this.blockQuery, null, true)
+      this.setState(state => ({ ...state, shouldUpdate: false }))
+    }
+    if (this.state.result && (!prevState.result || (prevState.result[0] !== this.state.result[0]))) {
+      const max = this.useBlock ? this.state.result[0] : this.state.result[1] + 1
+      const min = this.useBlock ? 1 : this.state.result[2] + 1
+      this.setState(state => ({ ...state, max, min, value: max }))
+      this.conn.forceTime(this.useBlock ? max : new Date(max))
+    }
+  }
+
+  handleChange = (event, value) => {
+    if (this.state.value === value) { return }
+    this.conn.forceTime(this.useBlock ? value : new Date(value))
+    this.setState(state => ({ ...state, value, changedBlock: true }))
   }
 
   render() {
     return (
-      <form onSubmit={this.handleSubmit.bind(this)}>
-        <input type="number" value={this.state.block} onChange={this.handleChange.bind(this)}></input>
-      </form>
+      <Slider value={this.state.value} scale={x => this.useBlock ? x : new Date(x).toLocaleString()} min={this.state.min} max={this.state.max} style={{ ...styleObj, ...this.props.style }} onChange={this.handleChange} ValueLabelComponent={ValueLabelComponent} />
     );
   }
+}
+
+const styleObj = {
+  width: 300,
+  marginTop: 10,
+  marginBottom: 10
 }
 
 

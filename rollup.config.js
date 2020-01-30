@@ -22,5 +22,5 @@ export default {
     resolve(),
     commonjs()
   ],
-  external: id => /^react/.test(id)
+  external: id => /node_modules/.test(id)
 };
