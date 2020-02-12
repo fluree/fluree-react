@@ -66,6 +66,18 @@ function executeUnauthorizedCallbacks(connId, data) {
     }
 }
 
+// in the case of a fatal error (i.e. cannot load web worker), report error to all components
+function reportFatalError(msg) {
+  Object.values(componentIdx).map( component => {
+    component.setState({
+      error: msg,
+      status: "error",
+      loading: false
+    })
+  })
+  return;
+}
+
 // worker.onmessage handler
 function workerMessageHandler(e) {
   const msg = e.data;
@@ -246,6 +258,7 @@ function queryIsValid(query) {
   if (
     query !== null
     && typeof query === "object"
+    && (query.select || query.selectOne)
     && (query.vars === undefined
       || typeof query.vars === "object") // null or object
   ) {
@@ -256,7 +269,10 @@ function queryIsValid(query) {
 }
 
 function workerErrorHandler(error) {
-  console.error('Web worker error', JSON.stringify(error));
+  console.error('Error loading Fluree web worker, check that it exists.');
+  console.error(error);
+  reportFatalError("Unable to load web worker, check console for error.");
+  return;
 }
 
 
@@ -305,17 +321,38 @@ function ReactConnect(config) {
     id: safeConfig.id,
     isReady: () => isReady(connId),
     isClosed: () => isClosed(connId),
-    login: function (username, password, cb, rememberMe) {
+
+    login: function (username, password, options, cb) {
       return workerInvoke({
         conn: safeConfig.id,
-        action: "login",
-        params: [username, password],
+        action: "pw.login",
+        params: [username, password, options],
         cb: function (response) {
           if (response.status !== 200) {
             SHOULD_LOG && console.warn("Login failed: " + response.message)
           }
           if (cb && typeof cb === 'function') {
-            if (response.status === 200 && rememberMe)
+            if (response.status === 200 && options.rememberMe)
+              localStorage.setItem(localStorageKey, response.result); // username, token
+            cb(result);
+          }
+          // execute pending callbacks on connection object
+          conn.executeCallbacks((response.status === 200 ? "authenticated" : "authentication error"));
+        }
+      });
+    },
+
+    newuser: function (username, password, options, cb) {
+      return workerInvoke({
+        conn: safeConfig.id,
+        action: "pw.newuser",
+        params: [username, password, options],
+        cb: function (response) {
+          if (response.status !== 200) {
+            SHOULD_LOG && console.warn("Login failed: " + response.message)
+          }
+          if (cb && typeof cb === 'function') {
+            if (response.status === 200 && options.rememberMe)
               localStorage.setItem(localStorageKey, response.result); // username, token
             cb(result);
           }
@@ -396,14 +433,7 @@ function ReactConnect(config) {
         cb: cb
       });
     },
-    defaultBlock: function (block) {
-      return workerInvoke({
-        conn: connId,
-        action: "defaultBlock",
-        params: [block],
-        cb: null
-      });
-    },
+
     forceTime: function (t) {
       // if (t && !(t instanceof Date)) {
       //   console.error("forceTime requires a date as a parameter, provided: " + t)
@@ -464,9 +494,9 @@ function ReactConnect(config) {
         conn.login(safeConfig.user, safeConfig.password, undefined, safeConfig.rememberMe);
       }
       else {
-        conn.executeCallbacks(data);
-      }
+      conn.executeCallbacks(data);
     }
+  }
   });
 
   // return connection object
@@ -539,7 +569,7 @@ function wrapComponent(WrappedComponent, query, opts) {
       this.isValidQuery = this.query && queryIsValid(this.query);
       this.missingVars = this.isValidQuery && this.query.vars ? getMissingVars(this.query) : []; // list of vars we need to check props for
       this.state = {
-        result: {},
+        result: this.query.selectOne ? null : [], // default query result [] unless selectOne query
         error: this.query && !this.isValidQuery ? { status: 400, message: "Query is not valid: " + JSON.stringify(this.query) } : null,
         warning: this.query ? null : "No query yet, waiting...",
         status: "pending",
