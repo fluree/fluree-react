@@ -3,8 +3,8 @@ import PropTypes from 'prop-types';
 import hoistNonReactStatics from 'hoist-non-react-statics';
 import { isStorageAvailable } from "./localStorage";
 import Samples from "./Samples";
-import Slider from '@material-ui/core/Slider'
-import Tooltip from '@material-ui/core/Tooltip'
+import Slider from '@material-ui/core/Slider';
+import Tooltip from '@material-ui/core/Tooltip';
 
 let SHOULD_LOG = false;
 
@@ -325,7 +325,7 @@ function ReactConnect(config) {
     login: function (username, password, options, cb) {
       return workerInvoke({
         conn: safeConfig.id,
-        action: "pw.login",
+        action: "login",
         params: [username, password, options],
         cb: function (response) {
           if (response.status !== 200) {
