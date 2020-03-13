@@ -96,6 +96,34 @@ function workerMessageHandler(e) {
       workerQueue = [];
       break;
 
+      case "connReset":
+        const crResponse = msg.data || {};
+        const crStatusCode = crResponse.status;
+        if (connStatus[msg.conn]) {
+          switch (crStatusCode) {
+            case 200:
+              connStatus[msg.conn].ready = true;
+              break;
+            case 401: // authorization error, need to log in
+              connStatus[msg.conn].ready = false;
+              connStatus[msg.conn].user = null;
+              connStatus[msg.conn].anonymous = true;
+              break;
+            default:
+              console.warn("Invalid connection reset status: " + JSON.stringify(crResponse));
+              break;
+          }
+        }
+  
+        // check for callback
+        cb = callbackRegistry[msg.ref];
+  
+        if (cb) {
+          delete callbackRegistry[msg.ref];
+          cb(msg, connStatus[msg.conn]);
+        }
+        break;
+  
     case "connStatus":
       const response = msg.data || {};
       const statusCode = response.status;
@@ -286,6 +314,7 @@ function workerErrorHandler(error) {
  * @param {boolean} [config.saveSession=false] - Will save session (token) locally so won't need to re-authenticate if token isn't expired
  * @param {string} [config.token] - You can supply a JWT token yourself
  * @param {boolean} [config.compact=true] - Option to remove namespaces from predicates when the namespace is the same as the collection
+ * @param {boolean} [config.keepAlive=false] - Option to attempt re-connection to the Fluree instance when web socket is no longer ping-able. 
  * @param {boolean} [config.log=false] - Set to true to see logging. Debug logging must be enabled with 'Verbose' in DevTools.
  * @param {string} [config.username] - Set username for login when you want to automatically trigger the login with connection initialization.
  * @param {string} [config.password] - Set password for login when you want to automatically trigger the login with connection initialization.
@@ -310,6 +339,7 @@ function ReactConnect(config) {
   safeConfig.id = connIdCounter;
   safeConfig.log = safeConfig.log === true ? true : false;
   safeConfig.compact = safeConfig.compact === false ? false : true;
+  safeConfig.keepAlive = safeConfig.keepAlive === true ? true : false;
 
   const connId = safeConfig.id;
   const localStorageKey = safeConfig.ledger + ':auth';
