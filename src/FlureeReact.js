@@ -20,6 +20,7 @@ var connIdCounter = 0;
 // map of each connection to an object containing keys:
 // - ready (boolean)
 // - user (user ident - two-tuple)
+// - token (jwt)
 // - anonymous (boolean)
 // - time - a time over-ride for all 'current' queries in the UI 
 // - unauthorizedCallbacks - optionally provided functions to call when something is unauthorized
@@ -201,6 +202,7 @@ function workerMessageHandler(e) {
       // if login successful, update conn's connStatus
       if (msg.data.status === 200) {
         connStatus[msg.conn].user = msg.data.result.username;
+        connStatus[msg.conn].token = msg.data.result.token;
         connStatus[msg.conn].anonymous = false;
       }
       else {
@@ -318,6 +320,7 @@ function workerErrorHandler(error) {
  * @param {boolean} [config.log=false] - Set to true to see logging. Debug logging must be enabled with 'Verbose' in DevTools.
  * @param {string} [config.username] - Set username for login when you want to automatically trigger the login with connection initialization.
  * @param {string} [config.password] - Set password for login when you want to automatically trigger the login with connection initialization.
+ * @param {integer} [config.expire] - Set expiration time (in milliseconds) for jwt.  The default is no timeout for the token.
  */
 function ReactConnect(config) {
   var safeConfig;
@@ -352,11 +355,11 @@ function ReactConnect(config) {
     isReady: () => isReady(connId),
     isClosed: () => isClosed(connId),
 
-    login: function (username, password, options, cb) {
+    login: function (username, password, expire, options, cb) {
       return workerInvoke({
         conn: safeConfig.id,
         action: "login",
-        params: [username, password, options],
+        params: [username, password, expire, options],
         cb: function (response) {
           if (response.status !== 200) {
             SHOULD_LOG && console.warn("Login failed: " + response.message)
@@ -364,7 +367,7 @@ function ReactConnect(config) {
           if (cb && typeof cb === 'function') {
             if (response.status === 200 && options.rememberMe)
               localStorage.setItem(localStorageKey, response.result); // username, token
-            cb(result);
+            cb(response.result);
           }
           // execute pending callbacks on connection object
           conn.executeCallbacks((response.status === 200 ? "authenticated" : "authentication error"));
@@ -384,7 +387,7 @@ function ReactConnect(config) {
           if (cb && typeof cb === 'function') {
             if (response.status === 200 && options.rememberMe)
               localStorage.setItem(localStorageKey, response.result); // username, token
-            cb(result);
+            cb(response.result);
           }
           // execute pending callbacks on connection object
           conn.executeCallbacks((response.status === 200 ? "authenticated" : "authentication error"));
@@ -521,7 +524,7 @@ function ReactConnect(config) {
       var data = { status: (response.status === 200 ? "loading" : "connection error") };
 
       if (safeConfig.user) {  // Authenticate?
-        conn.login(safeConfig.user, safeConfig.password, undefined, safeConfig.rememberMe);
+        conn.login(safeConfig.user, safeConfig.password, safeConfig.expire, undefined, safeConfig.rememberMe);
       }
       else {
       conn.executeCallbacks(data);
