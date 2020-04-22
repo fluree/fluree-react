@@ -188,6 +188,22 @@ function workerMessageHandler(e) {
 
       break;
 
+
+    case "setTransact":
+
+      // Is there anything todo after a transaction executes?
+      // Do we need to send a set state on the component?
+      
+      // const comp = componentIdx[msg.ref];
+
+      // if (comp) {
+      //   comp.setState(msg.data);
+      // } else {
+      //   SHOULD_LOG && console.warn("Component no longer registered: " + msg.ref);
+      // }
+
+      break;      
+
     case "remoteInvoke":
       // check for a callback
       cb = callbackRegistry[msg.ref];
@@ -198,6 +214,7 @@ function workerMessageHandler(e) {
       break;
 
     case "login":
+    case "pwGenerate":
       // if login successful, update conn's connStatus
       if (msg.data.status === 200) {
         connStatus[msg.conn].user = msg.data.result.username;
@@ -364,7 +381,7 @@ function ReactConnect(config) {
           if (cb && typeof cb === 'function') {
             if (response.status === 200 && options.rememberMe)
               localStorage.setItem(localStorageKey, response.result); // username, token
-            cb(result);
+            cb(response.result);
           }
           // execute pending callbacks on connection object
           conn.executeCallbacks((response.status === 200 ? "authenticated" : "authentication error"));
@@ -375,16 +392,16 @@ function ReactConnect(config) {
     newuser: function (username, password, options, cb) {
       return workerInvoke({
         conn: safeConfig.id,
-        action: "pw.newuser",
-        params: [username, password, options],
+        action: "pwGenerate",
+        params: [{"username": username, "password": password, "options": options}],
         cb: function (response) {
           if (response.status !== 200) {
-            SHOULD_LOG && console.warn("Login failed: " + response.message)
+            SHOULD_LOG && console.warn("Password generation failed: " + response.message)
           }
           if (cb && typeof cb === 'function') {
-            if (response.status === 200 && options.rememberMe)
+            if (response.status === 200 && options && options.rememberMe)
               localStorage.setItem(localStorageKey, response.result); // username, token
-            cb(result);
+            cb(response.result);
           }
           // execute pending callbacks on connection object
           conn.executeCallbacks((response.status === 200 ? "authenticated" : "authentication error"));
@@ -463,7 +480,24 @@ function ReactConnect(config) {
         cb: cb
       });
     },
-
+    transact: function(txn, options, cb) {
+      let _txn = (txn && typeof txn === 'string' ? txn : JSON.stringify(txn));
+      return workerInvoke({
+        conn: safeConfig.id,
+        action: "transact",
+        params: [{"txn": _txn, "options": options}],
+        cb: function (response) {
+          if (response.status !== 200) {
+            SHOULD_LOG && console.error("Transaction failed: " + response.message)
+          }
+          if (cb && typeof cb === 'function') {
+            cb(response.result);
+          }
+          // should we execute any pending callbacks on connection object?
+          //conn.executeCallbacks((response.status === 200 ? "success" : "error"));
+        }
+      });      
+    },
     forceTime: function (t) {
       // if (t && !(t instanceof Date)) {
       //   console.error("forceTime requires a date as a parameter, provided: " + t)
